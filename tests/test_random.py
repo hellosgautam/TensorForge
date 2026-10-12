@@ -18,3 +18,15 @@ def test_values_are_32_bit():
     for _ in range(1000):
         v = g.next_uint32()
         assert 0 <= v < 2**32
+def test_uniform_stays_in_range():
+    g = Generator(3)
+    for _ in range(1000):
+        v = g.uniform(-2.0, 5.0)
+        assert -2.0 <= v < 5.0
+
+
+def test_uniform_mean_is_about_half():
+    g = Generator(0)
+    values = [g.uniform() for _ in range(100_000)]
+    mean = sum(values) / len(values)
+    assert abs(mean - 0.5) < 0.01

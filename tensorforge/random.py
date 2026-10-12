@@ -14,3 +14,8 @@ class Generator:
         x ^= x >> 27
         self.state = x
         return ((x * 0x2545F4914F6CDD1D) & MASK64) >> 32
+
+    def uniform(self, low: float = 0.0, high: float = 1.0) -> float:
+        u = self.next_uint32() / 2**32  # a decimal from 0 up to (not including) 1
+        return low + (high - low) * u
+
