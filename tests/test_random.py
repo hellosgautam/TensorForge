@@ -30,3 +30,18 @@ def test_uniform_mean_is_about_half():
     values = [g.uniform() for _ in range(100_000)]
     mean = sum(values) / len(values)
     assert abs(mean - 0.5) < 0.01
+
+def test_normal_mean_and_std():
+    g = Generator(0)
+    values = [g.normal() for _ in range(100_000)]
+    mean = sum(values) / len(values)
+    std = (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
+    assert abs(mean - 0.0) < 0.02
+    assert abs(std - 1.0) < 0.02
+
+
+def test_normal_shift_and_scale():
+    g = Generator(1)
+    values = [g.normal(mean=10.0, std=3.0) for _ in range(100_000)]
+    mean = sum(values) / len(values)
+    assert abs(mean - 10.0) < 0.1

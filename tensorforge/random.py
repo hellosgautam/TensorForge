@@ -1,4 +1,5 @@
 MASK64 = (1 << 64) - 1  # keeps numbers within 64 bits
+import math
 
 
 class Generator:
@@ -18,4 +19,10 @@ class Generator:
     def uniform(self, low: float = 0.0, high: float = 1.0) -> float:
         u = self.next_uint32() / 2**32  # a decimal from 0 up to (not including) 1
         return low + (high - low) * u
+
+    def normal(self, mean: float = 0.0, std: float = 1.0) -> float:
+        u1 = 1.0 - self.uniform()  # from just above 0 up to 1, so log(u1) is safe
+        u2 = self.uniform()
+        z = math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
+        return mean + std * z
 
