@@ -1,4 +1,5 @@
-from tensorforge.random import Generator
+from tensorforge.random import Generator, manual_seed, get_generator
+
 
 
 def test_same_seed_gives_same_sequence():
@@ -45,3 +46,22 @@ def test_normal_shift_and_scale():
     values = [g.normal(mean=10.0, std=3.0) for _ in range(100_000)]
     mean = sum(values) / len(values)
     assert abs(mean - 10.0) < 0.1
+
+
+def test_permutation_contains_each_number_once():
+    g = Generator(5)
+    p = g.permutation(100)
+    assert sorted(p) == list(range(100))
+
+
+def test_permutation_actually_shuffles():
+    g = Generator(5)
+    assert g.permutation(100) != list(range(100))
+
+
+def test_manual_seed_is_reproducible():
+    manual_seed(123)
+    first = [get_generator().uniform() for _ in range(5)]
+    manual_seed(123)
+    second = [get_generator().uniform() for _ in range(5)]
+    assert first == second

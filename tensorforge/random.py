@@ -26,3 +26,30 @@ class Generator:
         z = math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
         return mean + std * z
 
+    def randint(self, n: int) -> int:
+        """Random integer from 0 to n - 1."""
+        return int(self.uniform() * n)
+
+    def permutation(self, n: int) -> list[int]:
+        """The numbers 0 to n - 1 in a random order (Fisher-Yates shuffle)."""
+        items = list(range(n))
+        for i in range(n - 1, 0, -1):
+            j = self.randint(i + 1)
+            items[i], items[j] = items[j], items[i]
+        return items
+
+
+
+_global_generator = Generator(0)
+
+
+def manual_seed(seed: int) -> None:
+    """Reset the global generator so results can be reproduced."""
+    global _global_generator
+    _global_generator = Generator(seed)
+
+
+def get_generator() -> Generator:
+    return _global_generator
+
+
