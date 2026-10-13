@@ -81,6 +81,68 @@ class Tensor:
         if self.numel != 1:
             raise ValueError("item() only works on tensors with one element")
         return self._get(*([0] * self.ndim))
+    
+    def tolist(self):
+        """Nested Python lists, read by walking the strides."""
+        def build(dim, pos):
+            if dim == self.ndim:
+                return self.storage.data[pos].item()
+            return [build(dim + 1, pos + i * self.strides[dim])
+                    for i in range(self.shape[dim])]
+        return build(0, self.offset)
+
+    def to_numpy(self):
+        return np.array(self.tolist(), dtype=_DTYPES[self.dtype])
+
+    def __getitem__(self, key):
+        """Indexing and slicing. Returns a view: no data is copied."""
+        if not isinstance(key, tuple):
+            key = (key,)
+
+        # How many keys use up a real dimension (None and ... don't).
+        n_real = sum(1 for k in key if k is not None and k is not Ellipsis)
+        n_ellipsis = sum(1 for k in key if k is Ellipsis)
+        if n_ellipsis > 1:
+            raise IndexError("Only one ... allowed")
+        if n_real > self.ndim:
+            raise IndexError(f"Too many indices for a {self.ndim}-d tensor")
+
+        # Expand ... into full slices, then pad missing dimensions with ':'.
+        if n_ellipsis:
+            i = next(j for j, k in enumerate(key) if k is Ellipsis)
+            fill = (slice(None),) * (self.ndim - n_real)
+            key = key[:i] + fill + key[i + 1:]
+        else:
+            key = key + (slice(None),) * (self.ndim - n_real)
+
+        offset = self.offset
+        shape, strides = [], []
+        dim = 0  # which original dimension we're on
+        for k in key:
+            if k is None:
+                shape.append(1)
+                strides.append(0)
+                continue
+            size, stride = self.shape[dim], self.strides[dim]
+            if isinstance(k, int):
+                if k < 0:
+                    k += size
+                if not 0 <= k < size:
+                    raise IndexError(f"Index {k} out of range for size {size}")
+                offset += k * stride  # dimension is dropped
+            elif isinstance(k, slice):
+                start, stop, step = k.indices(size)
+                length = len(range(start, stop, step))
+                if length > 0:
+                    offset += start * stride
+                shape.append(length)
+                strides.append(stride * step)
+            else:
+                raise TypeError(f"Unsupported index {k!r}")
+            dim += 1
+
+        return Tensor(self.storage, shape, strides, offset)
+
 
 def _infer_shape(data) -> tuple:
     """Shape of a nested list, read from its first elements."""

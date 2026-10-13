@@ -92,3 +92,104 @@ def test_eye():
     assert t._get(0, 0) == 1
     assert t._get(1, 1) == 1
     assert t._get(0, 1) == 0
+
+import random
+
+import numpy as np
+
+def make(shape):
+    """A TensorForge tensor and a NumPy array holding the same values 0, 1, 2, ..."""
+    a = np.arange(int(np.prod(shape))).reshape(shape)
+    return tensor(a.tolist()), a
+
+
+def test_tolist_roundtrip():
+    t, a = make((2, 3, 4))
+    assert t.tolist() == a.tolist()
+
+
+def test_integer_index_drops_dim():
+    t, a = make((2, 3, 4))
+    assert t[1].shape == (3, 4)
+    assert t[1].tolist() == a[1].tolist()
+    assert t[1, 2, 3].item() == a[1, 2, 3]
+
+
+def test_basic_slices():
+    t, a = make((4, 6))
+    assert t[1:, ::2].tolist() == a[1:, ::2].tolist()
+    assert t[:, 2:5].tolist() == a[:, 2:5].tolist()
+
+
+def test_negative_step():
+    t, a = make((5,))
+    assert t[::-1].tolist() == a[::-1].tolist()
+    assert t[4:0:-2].tolist() == a[4:0:-2].tolist()
+
+
+def test_negative_integer_index():
+    t, a = make((3, 4))
+    assert t[-1, -2].item() == a[-1, -2]
+
+
+def test_none_adds_dim():
+    t, a = make((3, 4))
+    assert t[None].shape == (1, 3, 4)
+    assert t[:, None].shape == a[:, None].shape
+
+
+def test_ellipsis():
+    t, a = make((2, 3, 4))
+    assert t[..., 1].tolist() == a[..., 1].tolist()
+    assert t[0, ...].tolist() == a[0, ...].tolist()
+
+
+def test_chained_slicing():
+    t, a = make((4, 5, 6))
+    assert t[1:][:, ::2][..., -1].tolist() == a[1:][:, ::2][..., -1].tolist()
+
+
+def test_slice_shares_storage():
+    t, _ = make((4, 4))
+    view = t[1:3, ::2]
+    assert view.storage is t.storage
+    assert view.offset == 4
+    assert view.strides == (4, 2)
+
+
+def test_empty_slice():
+    t, a = make((5,))
+    assert t[2:2].shape == (0,)
+    assert t[2:2].tolist() == []
+
+
+def test_too_many_indices_raises():
+    t, _ = make((2, 3))
+    with pytest.raises(IndexError):
+        t[0, 0, 0]
+
+
+def _random_key(rng, shape):
+    key = []
+    for size in shape:
+        if rng.random() < 0.3:
+            key.append(rng.randrange(-size, size))
+        else:
+            start = rng.choice([None, rng.randrange(-size, size)])
+            stop = rng.choice([None, rng.randrange(-size, size + 1)])
+            step = rng.choice([None, 1, 2, 3, -1, -2])
+            key.append(slice(start, stop, step))
+    return tuple(key)
+
+
+def test_random_slicing_matches_numpy():
+    rng = random.Random(0)
+    for _ in range(300):
+        t, a = make((3, 4, 5))
+        for _ in range(2):
+            if t.ndim == 0 or 0 in t.shape:
+                break
+            key = _random_key(rng, t.shape)
+            t, a = t[key], a[key]
+        assert t.shape == a.shape
+        assert t.tolist() == a.tolist()
