@@ -1,7 +1,16 @@
+import random
+
+import numpy as np
 import pytest
 
-from tensorforge.tensor import Storage, Tensor, _contiguous_strides
+from tensorforge.random import manual_seed
+from tensorforge.tensor import (
+    Storage, Tensor, _contiguous_strides, arange, eye, full, ones,
+    rand, randn, tensor, zeros,
+)
 
+
+# ---------- Step 1: Storage and fields ----------
 
 def test_contiguous_strides():
     assert _contiguous_strides((2, 3, 4)) == (12, 4, 1)
@@ -31,9 +40,8 @@ def test_bad_dtype_raises():
     with pytest.raises(ValueError):
         Storage([1, 2], dtype="complex")
 
-from tensorforge.tensor import (
-    Storage, Tensor, _contiguous_strides, arange, eye, full, ones, tensor, zeros,
-)
+
+# ---------- Step 2: constructors and element access ----------
 
 def test_tensor_from_nested_list():
     t = tensor([[1, 2, 3], [4, 5, 6]])
@@ -93,9 +101,8 @@ def test_eye():
     assert t._get(1, 1) == 1
     assert t._get(0, 1) == 0
 
-import random
 
-import numpy as np
+# ---------- Step 3: slicing ----------
 
 def make(shape):
     """A TensorForge tensor and a NumPy array holding the same values 0, 1, 2, ..."""
@@ -193,3 +200,145 @@ def test_random_slicing_matches_numpy():
             t, a = t[key], a[key]
         assert t.shape == a.shape
         assert t.tolist() == a.tolist()
+
+
+# ---------- Steps 4-8: views, contiguity, reshape, writes ----------
+
+def test_transpose_matches_numpy():
+    t, a = make((2, 3, 4))
+    tt = t.transpose(0, 2)
+    assert tt.shape == (4, 3, 2)
+    assert tt.strides == (1, 4, 12)
+    assert tt.storage is t.storage
+    assert tt.tolist() == np.swapaxes(a, 0, 2).tolist()
+
+
+def test_T_reverses_dims():
+    t, a = make((2, 3, 4))
+    assert t.T.tolist() == a.T.tolist()
+
+
+def test_permute_matches_numpy():
+    t, a = make((2, 3, 4))
+    assert t.permute(2, 0, 1).tolist() == np.transpose(a, (2, 0, 1)).tolist()
+
+
+def test_double_transpose_is_original_view():
+    t, _ = make((3, 4))
+    back = t.T.T
+    assert back.storage is t.storage
+    assert back.strides == t.strides
+
+
+def test_unsqueeze_and_squeeze():
+    t, _ = make((3, 4))
+    assert t.unsqueeze(0).shape == (1, 3, 4)
+    assert t.unsqueeze(-1).shape == (3, 4, 1)
+    assert t.unsqueeze(1).squeeze().shape == (3, 4)
+    assert t.unsqueeze(1).squeeze(0).shape == (3, 1, 4)
+
+
+def test_expand_uses_stride_zero():
+    t = tensor([[1], [2], [3]])
+    e = t.expand(2, 3, 4)
+    assert e.shape == (2, 3, 4)
+    assert e.strides == (0, 1, 0)
+    assert e.storage is t.storage
+    a = np.array([[1], [2], [3]])
+    assert e.tolist() == np.broadcast_to(a, (2, 3, 4)).tolist()
+
+
+def test_is_contiguous():
+    t, _ = make((4, 6))
+    assert t.is_contiguous()
+    assert t[1:].is_contiguous()
+    assert not t.T.is_contiguous()
+    assert not t[:, ::2].is_contiguous()
+
+
+def test_contiguous_copies_only_when_needed():
+    t, a = make((3, 4))
+    assert t.contiguous() is t
+    c = t.T.contiguous()
+    assert c.storage is not t.storage
+    assert c.is_contiguous()
+    assert c.tolist() == a.T.tolist()
+
+
+def test_view():
+    t, a = make((2, 3, 4))
+    v = t.view(6, 4)
+    assert v.storage is t.storage
+    assert v.tolist() == a.reshape(6, 4).tolist()
+    assert t.view(-1, 2).shape == (12, 2)
+
+
+def test_view_on_transposed_raises():
+    t, _ = make((3, 4))
+    with pytest.raises(RuntimeError):
+        t.T.view(12)
+
+
+def test_reshape_copies_when_needed():
+    t, a = make((3, 4))
+    r = t.T.reshape(12)
+    assert r.storage is not t.storage
+    assert r.tolist() == a.T.reshape(12).tolist()
+
+
+def test_flatten():
+    t, a = make((2, 3, 4))
+    assert t[:, ::2].flatten().tolist() == a[:, ::2].reshape(-1).tolist()
+
+
+def test_write_through_view_changes_base():
+    t, _ = make((3, 4))
+    v = t[1:]
+    before = t._version
+    v[0, :] = 99
+    assert t[1].tolist() == [99, 99, 99, 99]
+    assert t._version == before + 1
+
+
+def test_setitem_with_tensor():
+    t = zeros(2, 3)
+    t[0] = tensor([1.0, 2.0, 3.0])
+    assert t.tolist() == [[1.0, 2.0, 3.0], [0.0, 0.0, 0.0]]
+
+
+def test_rand_and_randn_reproducible():
+    manual_seed(42)
+    a = randn(2, 3).tolist()
+    manual_seed(42)
+    b = randn(2, 3).tolist()
+    assert a == b
+    assert rand(4, 5).shape == (4, 5)
+
+
+def test_autograd_placeholders():
+    t = zeros(2)
+    assert t.requires_grad is False
+    assert t.grad is None
+    assert t._prev == ()
+
+
+def test_random_view_chains_match_numpy():
+    rng = random.Random(1)
+    for _ in range(200):
+        t, a = make((2, 3, 4, 5))
+        for _ in range(3):
+            if t.ndim == 0 or 0 in t.shape:
+                break
+            op = rng.choice(["slice", "transpose", "permute"])
+            if op == "slice":
+                key = _random_key(rng, t.shape)
+                t, a = t[key], a[key]
+            elif op == "transpose" and t.ndim >= 2:
+                d0, d1 = rng.sample(range(t.ndim), 2)
+                t, a = t.transpose(d0, d1), np.swapaxes(a, d0, d1)
+            elif op == "permute":
+                dims = list(range(t.ndim))
+                rng.shuffle(dims)
+                t, a = t.permute(*dims), np.transpose(a, dims)
+        assert t.tolist() == a.tolist()
+        assert t.flatten().tolist() == a.reshape(-1).tolist()
